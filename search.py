@@ -106,8 +106,8 @@ class CaseSearcher:
         from collections import Counter
         cats = Counter(c.get("cat", "未知") for c in self.cases)
         sources = Counter(c.get("source", "未知") for c in self.cases)
-        years = [c.get("year") for c in self.cases if c.get("year")]
-        years_sorted = sorted(years)
+        years = [str(c.get("year")) for c in self.cases if c.get("year")]
+        years_sorted = sorted(years, key=lambda y: y.zfill(4))
         return {
             "total": len(self.cases),
             "by_category": dict(cats.most_common()),
