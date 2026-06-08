@@ -59,60 +59,26 @@ python setup_wizard.py --choice 3   # 先拉包，后续自己接管增量
 
 ## 接入 MCP 客户端
 
-标准 MCP stdio 协议，兼容所有主流客户端。
+标准 MCP stdio 协议，任意客户端只需配置三个要素：
 
-### MyAgents
+| 要素 | 值 |
+|------|-----|
+| 命令 | `uv --directory /path/to/aluris-caselibrary-mcp run python server.py` |
+| 环境变量 | `ZHIPU_API_KEY` + `CASE_DB_PATH` |
 
-```json
-{
-  "id": "case-library",
-  "name": "法随案例库",
-  "type": "stdio",
-  "command": "uv",
-  "args": ["--directory", "/path/to/aluris-caselibrary-mcp", "run", "server.py"],
-  "env": {
-    "ZHIPU_API_KEY": "your-key",
-    "CASE_DB_PATH": "/path/to/data"
-  }
-}
-```
+各客户端语法不同但本质相同，举例如下：
 
-### Claude Code
+**MyAgents** — 设置页 MCP 服务器中添加 stdio 类型，command 填 `uv`，args 填 `--directory` `/path/to/aluris-caselibrary-mcp` `run` `python` `server.py`
+
+**Claude Code / Gemini CLI** — `mcp add` 命令：
 
 ```bash
 claude mcp add case-library \
-  --env ZHIPU_API_KEY=your-key \
-  --env CASE_DB_PATH=~/.myagents/case_db \
+  -e ZHIPU_API_KEY=your-key -e CASE_DB_PATH=~/.myagents/case_db \
   -- uv --directory /path/to/aluris-caselibrary-mcp run python server.py
 ```
 
-### Codex
-
-在 `codex.yaml` 中添加：
-
-```yaml
-mcp_servers:
-  case-library:
-    command: uv
-    args:
-      - --directory
-      - /path/to/aluris-caselibrary-mcp
-      - run
-      - python
-      - server.py
-    env:
-      ZHIPU_API_KEY: your-key
-      CASE_DB_PATH: ~/.myagents/case_db
-```
-
-### Gemini CLI
-
-```bash
-gemini mcp add case-library \
-  --env ZHIPU_API_KEY=your-key \
-  --env CASE_DB_PATH=~/.myagents/case_db \
-  -- uv --directory /path/to/aluris-caselibrary-mcp run python server.py
-```
+**Codex** — `codex.yaml` 的 `mcp_servers` 下按 command/args/env 配置即可
 
 ## 定时更新
 
