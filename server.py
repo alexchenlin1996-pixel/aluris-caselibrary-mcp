@@ -26,52 +26,35 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
     """将案例列表渲染为 Markdown 表格"""
     lines = []
     if with_similarity:
-        lines.append("| 序号 | ID | 案例 | 案号 | 法院 | 裁判观点 | 原文 | 相似度 |")
-        lines.append("|------|-----|------|------|------|----------|------|--------|")
+        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 相似度 |")
+        lines.append("|---|------|------|------|----------|--------|")
     else:
-        lines.append("| 序号 | ID | 案例 | 案号 | 法院 | 裁判观点 | 原文 |")
-        lines.append("|------|-----|------|------|------|----------|------|")
+        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 |")
+        lines.append("|---|------|------|------|----------|")
 
     for i, c in enumerate(results, 1):
         local_id = c.get("local_id", i - 1)
-
-        label = c.get("label", "")
-        title = c.get("title", "").strip()
-        if title.startswith(f"{label} — "):
-            display_title = title
-        elif label:
-            display_title = f"{label} — {title}"
-        else:
-            display_title = title
-        display_title = display_title[:45]
-
-        ah = c.get("ah", "")
-        if ah:
-            ah = ah.strip()[:35]
-        if not ah:
-            ah = "-"
-
-        court = (c.get("court") or "-").strip()
-        if len(court) > 16:
-            court = court[:14] + "…"
-
-        gist = (c.get("gist") or "-").strip()
-        gist = gist[:100].replace("\n", " ").replace("|", "\\|")
-        if len(c.get("gist", "")) > 100:
-            gist += "…"
-
+        title = c.get("title", "").strip()[:40]
+        ah = c.get("ah", "")[:30] or "-"
+        court = (c.get("court") or "-")[:14]
+        gist = (c.get("gist") or "-")[:80].replace("\n", " ").replace("|", "/")
         url = c.get("url", "")
+
+        # title 后跟原文链接（短链接 + local_id）
         if url:
-            title_attr = c.get("title", "案例").strip()[:30].replace('"', '')
-            source_link = f"[查看]({url})"
+            title_cell = f"{title} [原文]({url})"
         else:
-            source_link = "-"
+            title_cell = title
 
         if with_similarity:
             sim = c.get("similarity", 0)
-            lines.append(f"| {i} | {local_id} | {display_title} | {ah} | {court} | {gist} | {source_link} | {sim:.2f} |")
+            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {sim:.2f} |")
         else:
-            lines.append(f"| {i} | {local_id} | {display_title} | {ah} | {court} | {gist} | {source_link} |")
+            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} |")
+
+    # 底部附上 local_id 对照和详情查看提示
+    ids = ", ".join(f"#{r.get('local_id',i)}:{r.get('title','')[:15]}" for i, r in enumerate(results, 1))
+    lines.append(f"\n详情: get_case_detail(local_id=N)")
 
     return "\n".join(lines)
 
