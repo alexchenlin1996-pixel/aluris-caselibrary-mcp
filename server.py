@@ -26,8 +26,8 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
     """将案例列表渲染为 Markdown 表格"""
     lines = []
     if with_similarity:
-        lines.append("| 序号 | ID | 案例 | 案号 | 法院 | 裁判观点 | 原文 |  |")
-        lines.append("|------|-----|------|------|------|----------|------|----|")
+        lines.append("| 序号 | ID | 案例 | 案号 | 法院 | 裁判观点 | 原文 | 相似度 |")
+        lines.append("|------|-----|------|------|------|----------|------|--------|")
     else:
         lines.append("| 序号 | ID | 案例 | 案号 | 法院 | 裁判观点 | 原文 |")
         lines.append("|------|-----|------|------|------|----------|------|")
