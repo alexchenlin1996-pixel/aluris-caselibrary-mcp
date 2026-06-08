@@ -35,13 +35,13 @@ uv sync
 python setup_wizard.py --choice 1   # 自动下载数据包
 ```
 
-### 方式二：独立爬取
+### 方式二：独立同步模式
 
 ```bash
 git clone https://github.com/alexchenlin1996-pixel/aluris-caselibrary-mcp.git
 cd aluris-caselibrary-mcp
 uv sync
-python setup_wizard.py --choice 2   # 引导配置 API Key + 登录
+python setup_wizard.py --choice 2   # 引导配置 API Key + 登录，自行接管增量更新
 ```
 
 ### 方式三：混合模式
@@ -90,7 +90,7 @@ uv run python sync.py
 - numpy 余弦相似度
 - FastMCP (Python MCP SDK)
 - Playwright (rmfyalk 登录态)
-- httpx (公开源抓取)
+- httpx (公开数据同步)
 
 ## License
 
