@@ -26,11 +26,11 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
     """将案例列表渲染为 Markdown 表格"""
     lines = []
     if with_similarity:
-        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 相似度 |")
-        lines.append("|---|------|------|------|----------|--------|")
+        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 原文 | 相似度 |")
+        lines.append("|---|------|------|------|----------|------|--------|")
     else:
-        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 |")
-        lines.append("|---|------|------|------|----------|")
+        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 原文 |")
+        lines.append("|---|------|------|------|----------|------|")
 
     for i, c in enumerate(results, 1):
         local_id = c.get("local_id", i - 1)
@@ -40,17 +40,14 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
         gist = (c.get("gist") or "-")[:80].replace("\n", " ").replace("|", "/")
         url = c.get("url", "")
 
-        # title 后跟原文链接（短链接 + local_id）
-        if url:
-            title_cell = f"{title} [原文]({url})"
-        else:
-            title_cell = title
+        title_cell = title
 
+        link_cell = url if url else "-"
         if with_similarity:
             sim = c.get("similarity", 0)
-            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {sim:.2f} |")
+            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {link_cell} | {sim:.2f} |")
         else:
-            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} |")
+            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {link_cell} |")
 
     # 底部附上 local_id 对照和详情查看提示
     ids = ", ".join(f"#{r.get('local_id',i)}:{r.get('title','')[:15]}" for i, r in enumerate(results, 1))
