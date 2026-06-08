@@ -57,9 +57,11 @@ python setup_wizard.py --choice 3   # 先拉包，后续自己接管增量
 | `ZHIPU_API_KEY` | 智谱 API Key（用于 embedding） |
 | `CASE_DB_PATH` | 数据目录，默认 `~/.myagents/case_db` |
 
-## 接入 MyAgents
+## 接入 MCP 客户端
 
-在 MyAgents 设置中添加 MCP 服务器：
+标准 MCP stdio 协议，兼容所有主流客户端。
+
+### MyAgents
 
 ```json
 {
@@ -73,6 +75,43 @@ python setup_wizard.py --choice 3   # 先拉包，后续自己接管增量
     "CASE_DB_PATH": "/path/to/data"
   }
 }
+```
+
+### Claude Code
+
+```bash
+claude mcp add case-library \
+  --env ZHIPU_API_KEY=your-key \
+  --env CASE_DB_PATH=~/.myagents/case_db \
+  -- uv --directory /path/to/aluris-caselibrary-mcp run python server.py
+```
+
+### Codex
+
+在 `codex.yaml` 中添加：
+
+```yaml
+mcp_servers:
+  case-library:
+    command: uv
+    args:
+      - --directory
+      - /path/to/aluris-caselibrary-mcp
+      - run
+      - python
+      - server.py
+    env:
+      ZHIPU_API_KEY: your-key
+      CASE_DB_PATH: ~/.myagents/case_db
+```
+
+### Gemini CLI
+
+```bash
+gemini mcp add case-library \
+  --env ZHIPU_API_KEY=your-key \
+  --env CASE_DB_PATH=~/.myagents/case_db \
+  -- uv --directory /path/to/aluris-caselibrary-mcp run python server.py
 ```
 
 ## 定时更新
