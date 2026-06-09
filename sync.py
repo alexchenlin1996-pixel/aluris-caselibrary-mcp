@@ -43,7 +43,7 @@ def sync_case_library(dry_run: bool = False) -> dict:
     """
     执行 rmfyalk 案例库增量同步，然后重建新增案例的 embedding。
     """
-    from crawlers.case_library import crawl_incremental
+    from sources.case_library import crawl_incremental
 
     before_count = get_total_cases()
     result = crawl_incremental(dry_run=dry_run, max_pages=30)
@@ -127,11 +127,11 @@ def sync_all(dry_run: bool = False) -> dict:
 def _sync_source(source_name: str, dry_run: bool = False) -> dict:
     """同步单个公开数据源"""
     if source_name == "guide_case":
-        from crawlers.guide_case import crawl_incremental as fn
+        from sources.guide_case import crawl_incremental as fn
     elif source_name == "gazette":
-        from crawlers.public_sources import crawl_gazette_incremental as fn
+        from sources.public_sources import crawl_gazette_incremental as fn
     elif source_name == "fadawang":
-        from crawlers.public_sources import crawl_fadawang_incremental as fn
+        from sources.public_sources import crawl_fadawang_incremental as fn
     else:
         return {"error": f"unknown source: {source_name}"}
     return fn(dry_run=dry_run)

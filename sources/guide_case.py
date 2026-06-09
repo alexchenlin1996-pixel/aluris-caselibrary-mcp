@@ -1,5 +1,5 @@
 """
-指导案例爬虫 — court.gov.cn/fabu/xiangqing/{id}.html
+指导案例同步 — court.gov.cn/fabu/xiangqing/{id}.html
 编号连续递增（当前最新：279），抓取逻辑简单。
 """
 import re
@@ -122,7 +122,7 @@ def crawl_incremental(dry_run: bool = False) -> dict:
     client.close()
 
     if new_cases and not dry_run:
-        from crawlers.case_library import append_to_jsonl, save_sync_state
+        from sources.case_library import append_to_jsonl, save_sync_state
         from sync import load_state
         append_to_jsonl(new_cases)
         state = load_state()

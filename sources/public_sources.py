@@ -1,5 +1,5 @@
 """
-公报案例 + 法答网 轻量爬虫（均公开可访问，无需登录）
+公报案例 + 法答网 轻量同步（均公开可访问，无需登录）
 """
 import re
 import json
@@ -58,7 +58,7 @@ def crawl_gazette_incremental(dry_run: bool = False) -> dict:
         client.close()
 
     if new_cases and not dry_run:
-        from crawlers.case_library import append_to_jsonl
+        from sources.case_library import append_to_jsonl
         append_to_jsonl(new_cases)
         gs["known_hashes"] = list(known_hashes)
         gs["last_sync"] = datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S")
@@ -150,7 +150,7 @@ def crawl_fadawang_incremental(dry_run: bool = False) -> dict:
         client.close()
 
     if new_cases and not dry_run:
-        from crawlers.case_library import append_to_jsonl
+        from sources.case_library import append_to_jsonl
         append_to_jsonl(new_cases)
         fs["known_ids"] = list(known_ids)
         fs["last_sync"] = datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S")
