@@ -10,6 +10,7 @@ dependencies = [
     "jieba>=0.42",
     "playwright>=1.60.0",
     "beautifulsoup4>=4.15.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
