@@ -1,120 +1,73 @@
 """
-Embedding client — 智谱 GLM 的 embedding-3 模型。
-环境变量：ZHIPU_API_KEY（复用用户已有的智谱 Key）
+Embedding client — fastembed + BAAI/bge-small-zh-v1.5（本地推理，零 API Key）。
+首次使用自动从 HuggingFace 下载模型缓存到本地。
+
+BGE 模型需要前缀：case 文本加 "passage: "，搜索查询加 "query: "。
 """
 
 import os
-import time
 import json
 import numpy as np
-import httpx
 from typing import List
 
 # --- config ---
-API_BASE = "https://open.bigmodel.cn/api/paas/v4"
-MODEL = "embedding-3"
-BATCH_SIZE = 64
-DIM = 2048
-MAX_RETRIES = 3
-RETRY_DELAY = 2.0
+MODEL_NAME = "BAAI/bge-small-zh-v1.5"
+DIM = 512
+BATCH_SIZE = 256
+
+_model = None
 
 
-def _get_api_key() -> str:
-    key = os.environ.get("ZHIPU_API_KEY", "")
-    if not key:
-        raise RuntimeError("ZHIPU_API_KEY 环境变量未设置")
-    return key
+def _get_model():
+    """懒加载单例，首次调用时下载模型"""
+    global _model
+    if _model is None:
+        # 规避 NO_PROXY 中 [::1] 导致的 httpx URL 解析 bug
+        saved = os.environ.pop("NO_PROXY", None), os.environ.pop("no_proxy", None)
+        try:
+            from fastembed import TextEmbedding
+            print(f"加载 embedding 模型: {MODEL_NAME}...")
+            _model = TextEmbedding(MODEL_NAME)
+            print(f"  模型就绪，维度: {DIM}")
+        finally:
+            if saved[0]: os.environ["NO_PROXY"] = saved[0]
+            if saved[1]: os.environ["no_proxy"] = saved[1]
+    return _model
 
 
-def embed_single(text: str, client: httpx.Client | None = None) -> List[float]:
-    """嵌入单条文本"""
-    return embed_batch([text], client=client)[0]
+def embed_single(text: str) -> List[float]:
+    """嵌入单条查询文本（加 query 前缀）"""
+    return list(_get_model().embed([f"query: {text}"]))[0].tolist()
 
 
-def embed_batch(texts: List[str], client: httpx.Client | None = None) -> List[List[float]]:
-    """批量嵌入文本，最多一次 64 条"""
+def embed_batch(texts: List[str]) -> List[List[float]]:
+    """批量嵌入查询文本（加 query 前缀）"""
     if not texts:
         return []
-
-    close_client = False
-    if client is None:
-        client = httpx.Client(timeout=30.0, trust_env=False)
-        close_client = True
-
-    api_key = _get_api_key()
-    url = f"{API_BASE}/embeddings"
-
-    results = []
-    for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i:i + BATCH_SIZE]
-        for attempt in range(MAX_RETRIES):
-            try:
-                resp = client.post(
-                    url,
-                    json={
-                        "model": MODEL,
-                        "input": batch,
-                    },
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json()
-                # 按索引排序
-                items = sorted(body["data"], key=lambda x: x["index"])
-                results.extend([item["embedding"] for item in items])
-                break
-            except Exception as e:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                else:
-                    raise RuntimeError(f"Embedding API 失败（{len(batch)} 条）: {e}")
-
-    if close_client:
-        client.close()
-
-    return results
+    return [vec.tolist() for vec in _get_model().embed([f"query: {t}" for t in texts])]
 
 
 def build_embeddings(jsonl_path: str, output_path: str, dim: int = DIM) -> int:
     """
     从 JSONL 文件构建全量 embedding 矩阵，存为 .npy。
+    案例文本加 "passage: " 前缀（BGE 模型要求）。
     返回处理的案例数。
     """
     texts = []
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
             case = json.loads(line.strip())
-            # 拼接搜索文本：标题 + 关键词 + 裁判要点
             search_text = " ".join([
                 case.get("title", ""),
                 case.get("keywords", ""),
                 case.get("gist", ""),
             ])
-            texts.append(search_text[:1024])  # 截断，避免超长
+            texts.append(f"passage: {search_text[:1024]}")
 
-    print(f"准备嵌入 {len(texts)} 条案例...")
-    client = httpx.Client(timeout=60.0, trust_env=False)
-    all_embeddings = []
+    print(f"准备嵌入 {len(texts)} 条案例（模型: {MODEL_NAME}, 维度: {dim}）...")
+    model = _get_model()
+    all_embeddings = list(model.embed(texts, batch_size=BATCH_SIZE))
 
-    total_batches = (len(texts) + BATCH_SIZE - 1) // BATCH_SIZE
-    for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i:i + BATCH_SIZE]
-        batch_num = i // BATCH_SIZE + 1
-        print(f"  批次 {batch_num}/{total_batches}（{len(batch)} 条）...", end=" ")
-        try:
-            batch_vecs = embed_batch(batch, client=client)
-            all_embeddings.extend(batch_vecs)
-            print("✓")
-        except Exception as e:
-            print(f"✗ {e}")
-            raise
-
-    client.close()
-
-    # 存为 numpy 矩阵
     matrix = np.array(all_embeddings, dtype=np.float32)
     np.save(output_path, matrix)
     print(f"Embedding 矩阵: {matrix.shape} → {output_path}")
@@ -132,8 +85,6 @@ def build_incremental_embeddings(jsonl_path: str, output_path: str, start_index:
     """
     增量构建 embedding：只处理 start_index 之后的案例，追加到现有矩阵。
     """
-    import os
-
     # 读取现有矩阵
     if os.path.exists(output_path) and start_index > 0:
         existing = np.load(output_path)
@@ -153,30 +104,15 @@ def build_incremental_embeddings(jsonl_path: str, output_path: str, start_index:
                 case.get("keywords", ""),
                 case.get("gist", ""),
             ])
-            texts.append(search_text[:1024])
+            texts.append(f"passage: {search_text[:1024]}")
 
     if not texts:
         print("无新案例需要 embedding")
         return 0
 
     print(f"增量嵌入: {len(texts)} 条新案例...")
-    client = httpx.Client(timeout=60.0, trust_env=False)
-    new_embeddings = []
-
-    total_batches = (len(texts) + BATCH_SIZE - 1) // BATCH_SIZE
-    for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i:i + BATCH_SIZE]
-        batch_num = i // BATCH_SIZE + 1
-        print(f"  批次 {batch_num}/{total_batches}（{len(batch)} 条）...", end=" ")
-        try:
-            batch_vecs = embed_batch(batch, client=client)
-            new_embeddings.extend(batch_vecs)
-            print("✓")
-        except Exception as e:
-            print(f"✗ {e}")
-            raise
-
-    client.close()
+    model = _get_model()
+    new_embeddings = list(model.embed(texts, batch_size=BATCH_SIZE))
 
     # 拼接并保存
     new_matrix = np.array(new_embeddings, dtype=np.float32)

@@ -1,6 +1,8 @@
 """
 案例库 MCP Server — 司法案例语义检索。
-使用 FastMCP (Python MCP SDK) + stdio 传输。
+支持两种传输模式：
+  stdio: python server.py                        （本地 MCP，默认）
+  http:  python server.py --transport http        （远端部署，只读）
 """
 
 import os
@@ -18,6 +20,9 @@ import mcp.server.stdio
 from embed import embed_single
 from search import get_searcher
 
+# --- 全局配置 ---
+READONLY = False  # HTTP 模式下为 True，不暴露 sync_now
+
 # --- MCP Server ---
 server = Server("case-library")
 
@@ -26,28 +31,27 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
     """将案例列表渲染为 Markdown 表格"""
     lines = []
     if with_similarity:
-        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 原文 | 相似度 |")
-        lines.append("|---|------|------|------|----------|------|--------|")
+        lines.append("| # | 案例 | 来源 | 案号 | 法院 | 裁判观点 | 相似度 |")
+        lines.append("|---|------|------|------|------|----------|--------|")
     else:
-        lines.append("| # | 案例 | 案号 | 法院 | 裁判观点 | 原文 |")
-        lines.append("|---|------|------|------|----------|------|")
+        lines.append("| # | 案例 | 来源 | 案号 | 法院 | 裁判观点 |")
+        lines.append("|---|------|------|------|------|----------|")
 
     for i, c in enumerate(results, 1):
         local_id = c.get("local_id", i - 1)
         title = c.get("title", "").strip()[:40]
-        ah = c.get("ah", "")[:30] or "-"
-        court = (c.get("court") or "-")[:14]
+        source = c.get("source", "")[:8] or "-"
+        ah = c.get("ah", "")[:24] or "-"
+        court = (c.get("court") or "-")[:12]
         gist = (c.get("gist") or "-")[:80].replace("\n", " ").replace("|", "/")
-        url = c.get("url", "")
 
         title_cell = title
 
-        link_cell = url if url else "-"
         if with_similarity:
             sim = c.get("similarity", 0)
-            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {link_cell} | {sim:.2f} |")
+            lines.append(f"| {i} | {title_cell} | {source} | {ah} | {court} | {gist} | {sim:.2f} |")
         else:
-            lines.append(f"| {i} | {title_cell} | {ah} | {court} | {gist} | {link_cell} |")
+            lines.append(f"| {i} | {title_cell} | {source} | {ah} | {court} | {gist} |")
 
     # 底部附上 local_id 对照和详情查看提示
     ids = ", ".join(f"#{r.get('local_id',i)}:{r.get('title','')[:15]}" for i, r in enumerate(results, 1))
@@ -81,7 +85,7 @@ def _fmt_case_detail(c: dict) -> str:
 
 @server.list_tools()
 async def list_tools():
-    return [
+    tools = [
         Tool(
             name="search_similar_cases",
             description="语义检索类案。输入自然语言描述（如'小股东查账被拒'），返回最相似案例的裁判要点和相似度。",
@@ -134,7 +138,10 @@ async def list_tools():
                 "properties": {},
             },
         ),
-        Tool(
+    ]
+    # HTTP 远端模式不暴露 sync_now（安全：数据更新由管理员在服务器上手动执行）
+    if not READONLY:
+        tools.append(Tool(
             name="sync_now",
             description="手动触发案例库增量同步（从 rmfyalk 拉取最新入库案例）。同步可能需要数分钟，完成后返回新增案例数。",
             inputSchema={
@@ -144,8 +151,8 @@ async def list_tools():
                     "source": {"type": "string", "description": "数据源：case_library（默认）或 all", "default": "case_library"},
                 },
             },
-        ),
-    ]
+        ))
+    return tools
 
 
 @server.call_tool()
@@ -163,8 +170,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         # 1. embed query
         query_vec = embed_single(query)
 
-        # 2. search
-        results = searcher.search(query_vec, top_k=top_k, filters=filters)
+        # 2. search（两阶段：embedding 粗筛 + reranker 精排）
+        results = searcher.search(query_vec, top_k=top_k, filters=filters, query_text=query)
 
         if not results:
             return [TextContent(type="text", text="未找到匹配案例。请尝试调整查询或放宽过滤条件。")]
@@ -227,11 +234,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         dry_run = arguments.get("dry_run", False)
         source = arguments.get("source", "case_library")
         try:
+            import asyncio
             from sync import sync_all, sync_case_library
             if source == "case_library":
-                result = sync_case_library(dry_run=dry_run)
+                result = await asyncio.to_thread(sync_case_library, dry_run=dry_run)
             else:
-                result = sync_all(dry_run=dry_run)
+                result = await asyncio.to_thread(sync_all, dry_run=dry_run)
             return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
         except Exception as e:
             return [TextContent(type="text", text=f"同步失败: {e}")]
@@ -240,12 +248,60 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 def main():
-    """stdio MCP 入口"""
+    """MCP 入口。--transport stdio（默认）或 --transport http"""
+    import argparse
     import asyncio
-    async def run():
-        async with mcp.server.stdio.stdio_server() as (read, write):
-            await server.run(read, write, server.create_initialization_options())
-    asyncio.run(run())
+
+    p = argparse.ArgumentParser(description="法随案例库 MCP Server")
+    p.add_argument("--transport", choices=["stdio", "http"], default="stdio",
+                   help="传输模式: stdio（本地）或 http（远端部署）")
+    p.add_argument("--port", type=int, default=8080,
+                   help="HTTP 模式端口（默认 8080）")
+    p.add_argument("--host", type=str, default="0.0.0.0",
+                   help="HTTP 模式监听地址（默认 0.0.0.0）")
+    args = p.parse_args()
+
+    if args.transport == "stdio":
+        async def run():
+            async with mcp.server.stdio.stdio_server() as (read, write):
+                await server.run(read, write, server.create_initialization_options())
+        asyncio.run(run())
+
+    else:
+        global READONLY
+        READONLY = True
+        print(f"法随案例库 MCP HTTP Server → http://{args.host}:{args.port}/mcp")
+        print(f"模式: 只读（sync_now 不暴露）")
+
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from mcp.server.sse import SseServerTransport
+
+        sse = SseServerTransport("/mcp")
+
+        async def handle_sse(request):
+            async with sse.connect_sse(
+                request.scope, request.receive, request._send
+            ) as streams:
+                await server.run(
+                    streams[0], streams[1],
+                    server.create_initialization_options(),
+                )
+
+        async def health(request):
+            from starlette.responses import JSONResponse
+            return JSONResponse({"status": "ok"})
+
+        app = Starlette(
+            debug=False,
+            routes=[
+                Route("/health", health),
+                Route("/mcp", handle_sse),
+            ],
+        )
+
+        import uvicorn
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":
