@@ -1,111 +1,169 @@
-# 法随·指导案例MCP
+# 法随·案例库 MCP
 
-基于最高人民法院案例库的语义检索 MCP 工具，支持自然语言查找类案。
+AI 语义类案检索工具，7,372 条最高法 / 最高检权威案例，自然语言搜索。
 
-## 案例类型
+## 案例覆盖
 
-共收录 **7,364 条**权威案例，覆盖 7 类：
+| 类型 | 数量 | 效力 |
+|------|------|------|
+| 案例库案例 | 5,211 | 入库参考 |
+| 指导案例 | 556 | 应当参照 |
+| 典型案例 | 544 | 示范意义 |
+| 公报案例 | 461 | 可以参考 |
+| 最高检指导性案例 | 239 | 应当参照 |
+| 最高检典型案例 | 196 | 示范意义 |
+| 法答网 | 165 | 精选问答 |
+| **合计** | **7,372** | |
 
-| 案例类型 | 数量 | 效力 | 说明 |
-|----------|------|------|------|
-| 案例库案例 | 5,205 | 入库参考 | 最高法统一筛选入库，法官办案检索参考 |
-| 指导案例 | 558 | 应当参照 | 最高法审委会讨论通过 |
-| 典型案例 | 544 | 示范意义 | 最高法/最高检专题发布 |
-| 公报案例 | 457 | 可以参考 | 最高法公报发布 |
-| 最高检指导性案例 | 239 | 应当参照 | 最高检检委会讨论通过 |
-| 最高检典型案例 | 196 | 示范意义 | 最高检专题发布 |
-| 法答网 | 165 | 精选问答 | 最高法研究室权威答疑 |
+---
 
-数据每周增量更新（案例库案例自动同步），无需手动维护。
+## 快速配置（远端模式，推荐）
 
-## MCP 工具
+服务地址：`https://aluris.top/mcp`
 
-| 工具 | 说明 |
+无需安装 Python，无需下载数据，直接在 AI 客户端里填入以下配置即可。
+
+---
+
+### Claude Desktop
+
+配置文件路径：
+- macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows：`%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "法随案例库": {
+      "url": "https://aluris.top/mcp"
+    }
+  }
+}
+```
+
+> 如果文件里已有其他 MCP 服务，在 `mcpServers` 对象里追加一个键即可：
+> ```json
+> {
+>   "mcpServers": {
+>     "已有的服务": { "...": "..." },
+>     "法随案例库": {
+>       "url": "https://aluris.top/mcp"
+>     }
+>   }
+> }
+> ```
+
+修改完重启 Claude Desktop 生效。
+
+---
+
+### Cursor
+
+配置文件路径：`~/.cursor/mcp.json`（全局）或项目根目录 `.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "法随案例库": {
+      "url": "https://aluris.top/mcp"
+    }
+  }
+}
+```
+
+---
+
+### Windsurf
+
+配置文件路径：`~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "法随案例库": {
+      "url": "https://aluris.top/mcp"
+    }
+  }
+}
+```
+
+---
+
+### MyAgents / 其他支持 SSE 的 MCP 客户端
+
+在 MCP 服务器配置里填入：
+
+```
+URL: https://aluris.top/mcp
+类型: SSE (HTTP)
+```
+
+---
+
+## MCP 工具说明
+
+配置完成后，AI 可使用以下工具：
+
+| 工具 | 用途 |
 |------|------|
-| `search_similar_cases` | 语义检索类案，输入案情描述返回最相似案例 |
-| `get_case_detail` | 查看案例全文（裁判要点、基本案情、法条等） |
+| `search_similar_cases` | 语义检索类案——自然语言描述案件事实，返回最相关案例 |
+| `get_case_detail` | 获取案例完整信息（案情、裁判要点、全文、法条） |
 | `filter_cases` | 按法院、年份、案由、来源精确过滤 |
-| `library_stats` | 案例库统计概览 |
-| `sync_now` | 手动触发增量同步 |
+| `library_stats` | 查看案例库统计数据 |
 
-## 安装
+**示例提问：**
+- "帮我找小股东被拒绝查阅会计账簿的案例"
+- "搜索建设工程优先受偿权的指导案例"
+- "有没有涉及格式条款无效的公报案例"
 
-### 前置要求
+---
 
-- Python 3.11+
-- uv（推荐，用于依赖管理）
+## 本地部署（可选）
 
-### 方式一：GitHub Release 数据包（推荐）
-
-```bash
-git clone https://github.com/alexchenlin1996-pixel/aluris-caselibrary-mcp.git
-cd aluris-caselibrary-mcp
-uv sync
-python setup_wizard.py --choice 1   # 自动下载数据包
-```
-
-### 方式二：独立同步模式
+如需本地运行（数据存本地、支持增量同步），参考以下步骤：
 
 ```bash
 git clone https://github.com/alexchenlin1996-pixel/aluris-caselibrary-mcp.git
 cd aluris-caselibrary-mcp
 uv sync
-python setup_wizard.py --choice 2   # 引导配置 API Key + 登录，自行接管增量更新
+uv run python sync.py          # 首次拉取案例数据（需要时间）
 ```
 
-### 方式三：混合模式
+本地 stdio 模式（Claude Desktop）：
+
+```json
+{
+  "mcpServers": {
+    "法随案例库-本地": {
+      "command": "uv",
+      "args": ["run", "python", "/path/to/aluris-caselibrary-mcp/server.py"],
+      "env": {
+        "CASE_DB_PATH": "/path/to/case_db"
+      }
+    }
+  }
+}
+```
+
+本地 HTTP 模式：
 
 ```bash
-python setup_wizard.py --choice 3   # 先拉包，后续自己接管增量
+uv run python server.py --transport http --port 8765
 ```
 
-## 配置环境变量
+**无外部 API 依赖**——embedding 使用本地 BGE 模型，首次运行自动下载（约 100MB）。
 
-| 变量 | 说明 |
-|------|------|
-| `ZHIPU_API_KEY` | 智谱 API Key（用于 embedding） |
-| `CASE_DB_PATH` | 数据目录，默认 `~/.myagents/case_db` |
+---
 
-## 接入 MCP 客户端
+## 目录结构
 
-标准 MCP stdio 协议，任意客户端只需配置三个要素：
-
-| 要素 | 值 |
-|------|-----|
-| 命令 | `uv --directory /path/to/aluris-caselibrary-mcp run python server.py` |
-| 环境变量 | `ZHIPU_API_KEY` + `CASE_DB_PATH` |
-
-各客户端语法不同但本质相同，举例如下：
-
-**MyAgents** — 设置页 MCP 服务器中添加 stdio 类型，command 填 `uv`，args 填 `--directory` `/path/to/aluris-caselibrary-mcp` `run` `python` `server.py`
-
-**Claude Code / Gemini CLI** — `mcp add` 命令：
-
-```bash
-claude mcp add case-library \
-  -e ZHIPU_API_KEY=your-key -e CASE_DB_PATH=~/.myagents/case_db \
-  -- uv --directory /path/to/aluris-caselibrary-mcp run python server.py
 ```
-
-**Codex** — `codex.yaml` 的 `mcp_servers` 下按 command/args/env 配置即可
-
-## 定时更新
-
-```bash
-# 手动执行
-uv run python sync.py
-
-# 或在 MyAgents 中设置定时任务，调用 sync_now 工具
+├── server.py           # MCP 入口，支持 stdio / HTTP 双模式
+├── search.py           # 两阶段检索（embedding + reranker）
+├── embed.py            # fastembed + BAAI/bge-small-zh-v1.5
+├── sync.py             # 增量同步协调器
+└── sources/
+    ├── case_library.py # 最高院案例库（rmfyalk，需登录）
+    ├── guide_case.py   # 指导案例（公开）
+    └── public_sources.py # 公报案例 + 法答网（公开）
 ```
-
-## 技术栈
-
-- 智谱 embedding-3 (2048维)
-- numpy 余弦相似度
-- FastMCP (Python MCP SDK)
-- Playwright (rmfyalk 登录态)
-- httpx (公开数据同步)
-
-## License
-
-MIT
