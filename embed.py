@@ -22,16 +22,10 @@ def _get_model():
     """懒加载单例，首次调用时下载模型"""
     global _model
     if _model is None:
-        # 规避 NO_PROXY 中 [::1] 导致的 httpx URL 解析 bug
-        saved = os.environ.pop("NO_PROXY", None), os.environ.pop("no_proxy", None)
-        try:
-            from fastembed import TextEmbedding
-            print(f"加载 embedding 模型: {MODEL_NAME}...")
-            _model = TextEmbedding(MODEL_NAME)
-            print(f"  模型就绪，维度: {DIM}")
-        finally:
-            if saved[0]: os.environ["NO_PROXY"] = saved[0]
-            if saved[1]: os.environ["no_proxy"] = saved[1]
+        from fastembed import TextEmbedding
+        print(f"加载 embedding 模型: {MODEL_NAME}...")
+        _model = TextEmbedding(MODEL_NAME)
+        print(f"  模型就绪，维度: {DIM}")
     return _model
 
 

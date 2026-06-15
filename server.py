@@ -4,6 +4,13 @@
   stdio: python server.py                        （本地 MCP，默认）
   http:  python server.py --transport http        （远端部署，只读）
 """
+# NO_PROXY 中的 [::1] 会导致 huggingface_hub → httpx URL 解析崩溃，必须在一切 import 前清除
+import os as _os
+_os.environ.pop("NO_PROXY", None)
+_os.environ.pop("no_proxy", None)
+# 国内环境 HuggingFace 不通，必须用镜像
+if "HF_ENDPOINT" not in _os.environ:
+    _os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 import os
 import sys
@@ -255,8 +262,8 @@ def main():
     p = argparse.ArgumentParser(description="法随案例库 MCP Server")
     p.add_argument("--transport", choices=["stdio", "http"], default="stdio",
                    help="传输模式: stdio（本地）或 http（远端部署）")
-    p.add_argument("--port", type=int, default=8080,
-                   help="HTTP 模式端口（默认 8080）")
+    p.add_argument("--port", type=int, default=8765,
+                   help="HTTP 模式端口（默认 8765）")
     p.add_argument("--host", type=str, default="0.0.0.0",
                    help="HTTP 模式监听地址（默认 0.0.0.0）")
     args = p.parse_args()

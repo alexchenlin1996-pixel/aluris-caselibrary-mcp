@@ -2,6 +2,10 @@
 语义检索 — 两阶段：embedding 粗筛 + reranker 精排。
 加载 embedding 矩阵 + JSONL 案例数据 → 查询时做内积排序 → reranker 重打分。
 """
+# NO_PROXY 中的 [::1] 会导致 huggingface_hub → httpx URL 解析崩溃，直接清除不还原
+import os as _os
+_os.environ.pop("NO_PROXY", None)
+_os.environ.pop("no_proxy", None)
 
 import json
 import os
@@ -15,12 +19,6 @@ def _get_reranker():
     """懒加载 reranker 单例"""
     global _reranker
     if _reranker is None:
-        # 规避 NO_PROXY 中 [::1] 导致的 httpx URL 解析 bug + 启用 HF 镜像
-        import os as _os
-        saved = _os.environ.pop("NO_PROXY", None), _os.environ.pop("no_proxy", None)
-        saved_hf = _os.environ.get("HF_ENDPOINT")
-        if not saved_hf:
-            _os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
         try:
             from fastembed.rerank.cross_encoder import TextCrossEncoder
             _reranker = TextCrossEncoder("BAAI/bge-reranker-base")
@@ -28,10 +26,6 @@ def _get_reranker():
         except Exception as e:
             print(f"Reranker 加载失败（将跳过精排）: {e}")
             _reranker = False
-        finally:
-            if saved[0]: _os.environ["NO_PROXY"] = saved[0]
-            if saved[1]: _os.environ["no_proxy"] = saved[1]
-            if saved_hf: _os.environ["HF_ENDPOINT"] = saved_hf
     return _reranker if _reranker is not False else None
 
 
