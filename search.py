@@ -16,16 +16,20 @@ _reranker = None
 
 
 def _get_reranker():
-    """懒加载 reranker 单例"""
+    """懒加载 reranker 单例。设置 DISABLE_RERANKER=1 可跳过（内存受限的服务器用）。"""
     global _reranker
     if _reranker is None:
-        try:
-            from fastembed.rerank.cross_encoder import TextCrossEncoder
-            _reranker = TextCrossEncoder("BAAI/bge-reranker-base")
-            print("Reranker 模型就绪: BAAI/bge-reranker-base")
-        except Exception as e:
-            print(f"Reranker 加载失败（将跳过精排）: {e}")
+        if os.environ.get("DISABLE_RERANKER", "").strip() in ("1", "true", "yes"):
+            print("Reranker 已禁用（DISABLE_RERANKER=1）")
             _reranker = False
+        else:
+            try:
+                from fastembed.rerank.cross_encoder import TextCrossEncoder
+                _reranker = TextCrossEncoder("BAAI/bge-reranker-base")
+                print("Reranker 模型就绪: BAAI/bge-reranker-base")
+            except Exception as e:
+                print(f"Reranker 加载失败（将跳过精排）: {e}")
+                _reranker = False
     return _reranker if _reranker is not False else None
 
 
