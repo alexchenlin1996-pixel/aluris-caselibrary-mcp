@@ -29,11 +29,11 @@
 
 ## 快速配置（远端模式，推荐）
 
-推荐地址（Streamable HTTP）：`https://aluris.top/mcp/http`
+推荐地址：`https://aluris.top/mcp`
 
-兼容地址（SSE）：`https://aluris.top/mcp`
+该地址同时兼容 Streamable HTTP 和 SSE。
 
-无需安装 Python，无需下载数据，直接在 AI 客户端里填入以下配置即可。WorkBuddy、Claude、Cursor 等使用“URL / HTTP MCP”配置的客户端，优先使用推荐地址；如果客户端明确要求 SSE 类型，再使用兼容地址。
+无需安装 Python，无需下载数据，直接在 AI 客户端里填入以下配置即可。WorkBuddy、Claude、Cursor 等使用“URL / HTTP MCP”配置的客户端，直接填写推荐地址；如果客户端要求选择类型，优先选择 Streamable HTTP / HTTP MCP。
 
 ---
 
@@ -42,11 +42,11 @@
 远端 MCP 地址：
 
 ```
-URL: https://aluris.top/mcp/http
+URL: https://aluris.top/mcp
 类型: Streamable HTTP / HTTP MCP
 ```
 
-如果 WorkBuddy 的配置项只有 SSE 类型，使用：
+如果 WorkBuddy 的配置项只有 SSE 类型，仍使用同一个地址：
 
 ```
 URL: https://aluris.top/mcp
@@ -65,7 +65,7 @@ URL: https://aluris.top/mcp
 {
   "mcpServers": {
     "法随案例库": {
-      "url": "https://aluris.top/mcp/http"
+      "url": "https://aluris.top/mcp"
     }
   }
 }
@@ -77,7 +77,7 @@ URL: https://aluris.top/mcp
 >   "mcpServers": {
 >     "已有的服务": { "...": "..." },
 >     "法随案例库": {
->       "url": "https://aluris.top/mcp/http"
+>       "url": "https://aluris.top/mcp"
 >     }
 >   }
 > }
@@ -95,7 +95,7 @@ URL: https://aluris.top/mcp
 {
   "mcpServers": {
     "法随案例库": {
-      "url": "https://aluris.top/mcp/http"
+      "url": "https://aluris.top/mcp"
     }
   }
 }
@@ -111,7 +111,7 @@ URL: https://aluris.top/mcp
 {
   "mcpServers": {
     "法随案例库": {
-      "url": "https://aluris.top/mcp/http"
+      "url": "https://aluris.top/mcp"
     }
   }
 }

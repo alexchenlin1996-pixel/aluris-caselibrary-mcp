@@ -608,6 +608,17 @@ def main():
             async def __call__(self, scope, receive, send):
                 await self.session_manager.handle_request(scope, receive, send)
 
+        streamable_http_app = StreamableHTTPASGIApp(streamable_http_manager)
+
+        async def handle_mcp_asgi(scope, receive, send):
+            """统一 /mcp 入口：POST/DELETE 走 Streamable HTTP，普通 GET 走 SSE。"""
+            method = scope.get("method", "").upper()
+            headers = {k.lower(): v for k, v in scope.get("headers", [])}
+            if method in {"POST", "DELETE"} or b"mcp-session-id" in headers:
+                await streamable_http_app(scope, receive, send)
+            else:
+                await handle_sse_asgi(scope, receive, send)
+
         class ASGIPathRoute(BaseRoute):
             def __init__(self, path: str, app):
                 self.path = path.rstrip("/")
@@ -629,9 +640,9 @@ def main():
             lifespan=lambda app: streamable_http_manager.run(),
             routes=[
                 Route("/health", health),
-                ASGIPathRoute("/mcp", handle_sse_asgi),
+                ASGIPathRoute("/mcp", handle_mcp_asgi),
                 Mount("/messages/", app=sse.handle_post_message),
-                ASGIPathRoute("/mcp/http", StreamableHTTPASGIApp(streamable_http_manager)),
+                ASGIPathRoute("/mcp/http", streamable_http_app),
             ],
         )
 
