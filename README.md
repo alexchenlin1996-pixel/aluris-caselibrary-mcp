@@ -46,6 +46,30 @@ URL: https://aluris.top/mcp
 类型: Streamable HTTP / HTTP MCP
 ```
 
+已在 WorkBuddy v4.22.16 实测通过。推荐配置路径：
+
+1. 打开 WorkBuddy 左侧「连接器」
+2. 点击右上角「自定义连接器」
+3. 进入「MCP 服务管理」后点击「配置 MCP」
+4. 在 `~/.workbuddy/mcp.json` 的 `mcpServers` 中加入：
+
+```json
+{
+  "mcpServers": {
+    "fasui-caselibrary": {
+      "type": "http",
+      "url": "https://aluris.top/mcp",
+      "description": "法随案例库：最高法、最高检、法答网权威案例检索，结果包含裁判规则、引用摘要和原文链接。",
+      "disabled": false
+    }
+  }
+}
+```
+
+5. 返回 MCP 列表，点击「信任」；正常状态会显示 `fasui-caselibrary 7/7 个工具已启用`
+
+不要填写 `https://aluris.top/mcp/http`。如果在普通聊天框里直接粘贴 URL，WorkBuddy 可能会把它当作网页抓取；请通过「连接器 / 自定义连接器」入口配置 MCP。
+
 如果 WorkBuddy 的配置项只有 SSE 类型，仍使用同一个地址：
 
 ```
