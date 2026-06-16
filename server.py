@@ -577,6 +577,8 @@ def main():
         print(f"模式: 只读（sync_now 不暴露）")
 
         from starlette.applications import Starlette
+        from starlette.middleware import Middleware
+        from starlette.middleware.cors import CORSMiddleware
         from starlette.routing import BaseRoute, Match, Mount, Route
         from mcp.server.sse import SseServerTransport
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -638,6 +640,15 @@ def main():
         app = Starlette(
             debug=False,
             lifespan=lambda app: streamable_http_manager.run(),
+            middleware=[
+                Middleware(
+                    CORSMiddleware,
+                    allow_origins=["*"],
+                    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                    allow_headers=["*"],
+                    expose_headers=["mcp-session-id"],
+                ),
+            ],
             routes=[
                 Route("/health", health),
                 ASGIPathRoute("/mcp", handle_mcp_asgi),
