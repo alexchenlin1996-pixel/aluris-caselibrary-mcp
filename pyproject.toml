@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "司法案例库 MCP Server — 最高法指导案例/公报案例/案例库 语义检索"
 requires-python = ">=3.11"
 dependencies = [
+    "fastembed>=0.8.0",
     "mcp>=1.0.0",
     "numpy>=1.26",
     "httpx>=0.27",
@@ -16,5 +17,5 @@ dependencies = [
 [project.scripts]
 case-library-mcp = "server:main"
 
-[tool.uv]
-dev-dependencies = []
+[dependency-groups]
+dev = []

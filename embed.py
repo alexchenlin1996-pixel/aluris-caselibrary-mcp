@@ -18,6 +18,32 @@ BATCH_SIZE = 256
 _model = None
 
 
+def build_search_text(case: dict) -> str:
+    """构造案例入库检索文本：规则段落优先，缺失时退回基础字段。"""
+    try:
+        from search import extract_rule_text
+        rule_text, rule_source, rule_quality, _ = extract_rule_text(case)
+    except Exception:
+        rule_text, rule_source, rule_quality = "", "", "D"
+
+    parts = [
+        case.get("title", ""),
+        case.get("keywords", ""),
+        case.get("source", ""),
+        case.get("cat", ""),
+        case.get("cause", ""),
+    ]
+    if rule_quality in ("A", "B") and rule_text:
+        parts.extend([rule_source, rule_text])
+    else:
+        parts.extend([
+            case.get("gist", ""),
+            case.get("issue", ""),
+            str(case.get("full", ""))[:800],
+        ])
+    return " ".join(str(p) for p in parts if p)
+
+
 def _get_model():
     """懒加载单例，首次调用时下载模型"""
     global _model
@@ -51,11 +77,7 @@ def build_embeddings(jsonl_path: str, output_path: str, dim: int = DIM) -> int:
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
             case = json.loads(line.strip())
-            search_text = " ".join([
-                case.get("title", ""),
-                case.get("keywords", ""),
-                case.get("gist", ""),
-            ])
+            search_text = build_search_text(case)
             texts.append(f"passage: {search_text[:1024]}")
 
     print(f"准备嵌入 {len(texts)} 条案例（模型: {MODEL_NAME}, 维度: {dim}）...")
@@ -93,11 +115,7 @@ def build_incremental_embeddings(jsonl_path: str, output_path: str, start_index:
             if i < start_index:
                 continue
             case = json.loads(line.strip())
-            search_text = " ".join([
-                case.get("title", ""),
-                case.get("keywords", ""),
-                case.get("gist", ""),
-            ])
+            search_text = build_search_text(case)
             texts.append(f"passage: {search_text[:1024]}")
 
     if not texts:

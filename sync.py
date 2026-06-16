@@ -39,7 +39,7 @@ def get_total_cases() -> int:
         return sum(1 for _ in f)
 
 
-def sync_case_library(dry_run: bool = False) -> dict:
+def sync_case_library(dry_run: bool = False, build_embeddings: bool = True) -> dict:
     """
     执行 rmfyalk 案例库增量同步，然后重建新增案例的 embedding。
     """
@@ -51,7 +51,7 @@ def sync_case_library(dry_run: bool = False) -> dict:
 
     # 为新增案例生成 embedding
     new_count = result["new_count"]
-    if new_count > 0 and not dry_run:
+    if build_embeddings and new_count > 0 and not dry_run:
         print(f"\n 为 {new_count} 条新案例生成 embedding...")
         try:
             from embed import build_incremental_embeddings
@@ -85,7 +85,7 @@ def sync_all(dry_run: bool = False) -> dict:
     print(" rmfyalk 案例库")
     print("=" * 50)
     try:
-        cl_result = sync_case_library(dry_run=dry_run)
+        cl_result = sync_case_library(dry_run=dry_run, build_embeddings=False)
         results["sources"]["case_library"] = cl_result
         results["total_new"] += cl_result.get("new_count", 0)
     except Exception as e:
