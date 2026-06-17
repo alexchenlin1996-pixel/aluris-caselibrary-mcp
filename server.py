@@ -15,6 +15,7 @@ if "HF_ENDPOINT" not in _os.environ:
 import os
 import sys
 import json
+import re
 from typing import Optional
 
 # 确保 server.py 所在目录在 sys.path 中（MyAgents 的 cwd 不是这里）
@@ -82,7 +83,7 @@ def _build_table(results: list, with_similarity: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _build_cards(results: list, with_score: bool = False) -> str:
+def _build_cards(results: list, with_score: bool = False, query: str = "") -> str:
     """将检索结果渲染为便于办案判断的卡片。"""
     cards = []
     for i, c in enumerate(results, 1):
@@ -113,6 +114,7 @@ def _build_cards(results: list, with_score: bool = False) -> str:
             f"适用场景：{c.get('practice_scene') or '-'}",
             f"规则来源：{c.get('rule_source') or '未提取到可引用规则段落'}",
             f"案例详情摘要：{_case_detail_summary(c)}",
+            _format_evidence_block(c, query=query),
             f"\n裁判规则：{rule}",
             f"\n引用摘要：{_inline_citation_summary(c)}",
             f"\n原文链接：{_source_link(c)}",
@@ -128,6 +130,100 @@ def _source_link(c: dict) -> str:
     if url.startswith("http://") or url.startswith("https://"):
         return f"[原文]({url})"
     return url
+
+
+def _format_evidence_block(c: dict, query: str = "", limit: int = 360) -> str:
+    """输出可解释检索依据：优先使用可引用规则原文，不根据案情补写。"""
+    evidence = _select_evidence(c, query=query, limit=limit)
+    if not evidence["text"]:
+        return "\n命中依据：未提取到可展示的规则原文，请打开原文链接核验。"
+
+    if _is_citable_result(c):
+        label = "命中原文依据" if query else "规则原文依据"
+    else:
+        label = "命中线索" if query else "规则线索"
+    note = "" if _is_citable_result(c) else "（仅作线索，不建议直接放入报告引用）"
+    return "\n".join([
+        f"\n{label}：{evidence['text']}{note}",
+        f"来源位置：{evidence['source']}",
+    ])
+
+
+def _select_evidence(c: dict, query: str = "", limit: int = 360) -> dict:
+    candidates = []
+    if c.get("rule_text"):
+        candidates.append((c.get("rule_text", ""), c.get("rule_source") or "裁判规则", 100))
+    if c.get("full"):
+        source = "法答网答复正文" if c.get("source") == "法答网" else "原文正文"
+        candidates.append((c.get("full", ""), source, 80))
+    if c.get("gist"):
+        candidates.append((c.get("gist", ""), "裁判要点", 70))
+
+    terms = _query_terms(query)
+    best = {"text": "", "source": "", "score": -1}
+    for text, source, base_score in candidates:
+        for segment in _evidence_segments(text):
+            score = base_score + _segment_query_score(segment, terms)
+            if score > best["score"]:
+                best = {"text": _clip_text(segment, limit), "source": source, "score": score}
+    return best
+
+
+def _query_terms(query: str) -> list[str]:
+    query = str(query or "").strip()
+    if not query:
+        return []
+
+    raw_terms = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", query)
+    terms = set()
+    stopwords = {"案例", "检索", "最高法", "最高检", "法答网", "相关", "关于", "是否", "如何", "可以"}
+    for term in raw_terms:
+        if len(term) >= 2 and term not in stopwords:
+            terms.add(term)
+        if re.fullmatch(r"[\u4e00-\u9fff]{4,}", term):
+            for n in (2, 3):
+                for i in range(0, len(term) - n + 1):
+                    gram = term[i:i + n]
+                    if gram not in stopwords:
+                        terms.add(gram)
+    return sorted(terms, key=len, reverse=True)
+
+
+def _segment_query_score(segment: str, terms: list[str]) -> int:
+    if not terms:
+        return 0
+    return sum(len(term) * 3 for term in terms if term and term in segment)
+
+
+def _evidence_segments(text: object) -> list[str]:
+    text = str(text or "")
+    text = re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+    if not text:
+        return []
+
+    raw = re.split(r"(?<=[。！？；;])", text)
+    segments = []
+    buffer = ""
+    for part in raw:
+        part = part.strip()
+        if not part:
+            continue
+        if len(buffer) < 80:
+            buffer = f"{buffer}{part}" if buffer else part
+            continue
+        segments.append(buffer)
+        buffer = part
+    if buffer:
+        segments.append(buffer)
+
+    final = []
+    for segment in segments:
+        if len(segment) <= 420:
+            final.append(segment)
+            continue
+        for i in range(0, len(segment), 360):
+            final.append(segment[i:i + 420])
+    return final
 
 
 def _clip_text(value: object, limit: int) -> str:
@@ -205,6 +301,7 @@ def _fmt_case_detail(c: dict) -> str:
     """格式化单个案例详细信息"""
     rule_text = c.get("rule_text") or ""
     rule_source = c.get("rule_source") or ""
+    evidence = _select_evidence(c)
     parts = [
         f"# {c.get('label','')} — {c.get('title','')}",
         f"{c.get('cat','')} / {c.get('cause','')}  |  {c.get('court','')}  |  {c.get('year','')}",
@@ -215,6 +312,7 @@ def _fmt_case_detail(c: dict) -> str:
             f"适用场景：{c.get('practice_scene','')}"
         ),
         f"\n## 关键词\n{c.get('keywords','')}",
+        f"\n## 规则原文依据\n{evidence.get('text') or '未提取到可展示的规则原文，请打开原文链接核验。'}\n\n来源位置：{evidence.get('source') or '-'}",
         f"\n## 裁判规则\n来源：{rule_source or '未提取到可引用规则段落'}\n\n{rule_text or '该案例缺少可直接引用的裁判规则段落，请查看全文核验。'}",
     ]
     if c.get("issue"):
@@ -241,6 +339,7 @@ def _fmt_rule_results(issue: str, results: list) -> str:
             f"来源：{c.get('source','')}  |  权威类型：{c.get('authority_type','')}  |  引用价值：{c.get('citation_value','')}",
             f"规则质量：{c.get('rule_quality','')}  |  适用场景：{c.get('practice_scene','')}",
             f"规则来源：{c.get('rule_source') or '-'}",
+            _format_evidence_block(c, query=issue),
             f"裁判规则：{(c.get('rule_text') or '-')[:800]}",
             f"案例详情摘要：{_case_detail_summary(c)}",
             f"引用摘要：{_inline_citation_summary(c)}",
@@ -261,6 +360,7 @@ def _fmt_case_leads(title: str, results: list) -> str:
             f"\n## {i}. {c.get('title','')}",
             f"来源：{c.get('source','')}  |  权威类型：{c.get('authority_type','')}  |  规则质量：{c.get('rule_quality','D')}",
             f"原因：{c.get('rule_quality_note') or '未提取到可引用规则段落'}",
+            _format_evidence_block(c),
             f"摘要线索：{(c.get('rule_text') or c.get('gist') or c.get('full') or '-')[:500]}",
             f"案例详情摘要：{_case_detail_summary(c)}",
             f"原文链接：{_source_link(c)}",
@@ -280,6 +380,7 @@ def _fmt_citation_brief(c: dict) -> str:
             "请先打开原文核验裁判要旨、裁判理由或典型意义后再引用。",
             f"规则质量：{c.get('rule_quality') or 'D'}",
             f"原因：{c.get('rule_quality_note') or '未提取到可引用规则段落'}",
+            _format_evidence_block(c),
             f"原文链接：{c.get('url','') or '-'}",
         ])
     if len(rule_text) > 1200:
@@ -301,6 +402,7 @@ def _fmt_citation_brief(c: dict) -> str:
         f"案号：{c.get('ah','') or '-'}",
         f"年份：{c.get('year','') or '-'}",
         f"规则来源：{c.get('rule_source') or '-'}",
+        _format_evidence_block(c),
         f"\n## 可引用裁判规则\n{rule_text}",
         f"\n## 引用提示\n{caution}",
         f"\n## 原文链接\n{c.get('url','') or '-'}",
@@ -456,7 +558,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             output_parts.append(f"权威案例与司法规则检索「{query}」—— 返回 {len(results)} 个结果\n")
         else:
             output_parts.append(f"搜索「{query}」—— 返回 {len(results)} 个结果\n")
-        output_parts.append(_build_cards(results, with_score=True))
+        output_parts.append(_build_cards(results, with_score=True, query=query))
         output_parts.append("")
         cats = set(r.get("cat", "") for r in results)
         sources = set(r.get("source", "") for r in results)
@@ -465,7 +567,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             f"综合分 {results[-1].get('combined_score',0):.4f} ~ {results[0].get('combined_score',0):.4f}"
         )
         output_parts.append(
-            "\n每条卡片已包含详情摘要、引用摘要和原文链接。"
+            "\n每条卡片已包含命中原文依据、详情摘要、引用摘要和原文链接。"
         )
         output_parts.append("如需展开全文或最终汇总表，可以直接说“查看第 N 条详情”或“整理成表格”。")
 
