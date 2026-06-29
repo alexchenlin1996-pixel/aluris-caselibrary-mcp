@@ -15,6 +15,39 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 GAZETTE_INDEX = "http://gongbao.court.gov.cn/"
 
+# 公报首页包含案例、法规、司法文件、任免等，只保留真正的案例
+_NON_CASE_PATTERNS = [
+    r"(工作报告|司法统计公报|任免名单)$",          # 报告/统计/任免
+    r"(大法官|审判人员).*(公告|名单|任免)",         # 人事任免
+    r"^中华人民共和国\S+法$",                      # 法律文本
+    r"^全国人民代表大会",                          # 人大文件
+    r"^中共中央",                                  # 党中央文件
+    r"(印发|关于印发|关于修改|关于审理).*(通知|规定|解释|批复|办法|意见)$",  # 司法解释/通知
+    r"最高人民法院工作报告",                        # 工作报告
+]
+
+
+def _is_case(title: str) -> bool:
+    """判断公报标题是否为真正的案例（而非法规、司法文件、任免等）"""
+    # 明确是案例的模式
+    if "指导性案例" in title:
+        return True
+    if "诉" in title and "案" in title:
+        return True
+    if re.search(r"与.*(纠纷|赔偿|侵权|合同).*案", title):
+        return True
+
+    # 排除非案例模式
+    for pattern in _NON_CASE_PATTERNS:
+        if re.search(pattern, title):
+            return False
+
+    # 兜底：标题含"案"且不以文件类关键词结尾
+    if "案" in title and not re.search(r"(报告|通知|批复|解释|规定|办法|名单|公告|公报|意见)$", title):
+        return True
+
+    return False
+
 
 def crawl_gazette_incremental(dry_run: bool = False) -> dict:
     """公报案例增量：检查最新一期公报目录"""
@@ -25,6 +58,7 @@ def crawl_gazette_incremental(dry_run: bool = False) -> dict:
 
     client = httpx.Client(timeout=15.0, headers={"User-Agent": UA}, trust_env=False)
     new_cases = []
+    skipped = 0
 
     try:
         # 获取公报首页，找最新一期的链接
@@ -39,6 +73,12 @@ def crawl_gazette_incremental(dry_run: bool = False) -> dict:
         for href, hash_id, title in case_links:
             title = title.strip()
             if hash_id in known_hashes or len(title) < 4:
+                continue
+
+            if not _is_case(title):
+                print(f"  [SKIP] {title[:50]}（非案例）")
+                skipped += 1
+                known_hashes.add(hash_id)  # 记住已跳过，避免重复检查
                 continue
 
             url = f"http://gongbao.court.gov.cn{href}"
@@ -65,7 +105,7 @@ def crawl_gazette_incremental(dry_run: bool = False) -> dict:
         state["gazette"] = gs
         save_state(state)
 
-    return {"new_count": len(new_cases)}
+    return {"new_count": len(new_cases), "skipped": skipped}
 
 
 def _parse_gazette_detail(client: httpx.Client, url: str) -> Optional[dict]:

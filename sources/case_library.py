@@ -75,30 +75,50 @@ def is_logged_in(page: Page) -> bool:
     except Exception:
         return False
 
-def do_login(pw) -> tuple[BrowserContext, Page]:
+def do_login(pw, headless: bool = False) -> tuple[BrowserContext, Page]:
+    """启动浏览器并确保已登录。
+    headless=True: 无头模式（cron/自动化），依赖已保存的 cookie；未登录则直接报错。
+    headless=False: 有头模式（手动/向导），未登录则轮询等待用户完成登录。
+    """
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     context = pw.chromium.launch_persistent_context(
         str(PROFILE_DIR),
-        headless=False,
+        headless=headless,
         args=["--disable-blink-features=AutomationControlled"],
     )
     page = context.new_page()
     if is_logged_in(page):
-        print("[OK]  已有有效登录态")
+        print("[OK]  已有有效登录态" + (" (headless)" if headless else ""))
         return context, page
 
-    page.goto(f"{BASE_URL}/view/list.html", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(2000)
-    print("\n[WARN] ️ 需要登录 rmfyalk.court.gov.cn")
-    print("请在浏览器中完成登录，回到终端按 Enter 继续...")
-    input()
-
-    if is_logged_in(page):
-        print("[OK]  登录成功")
-        return context, page
-    else:
+    if headless:
         context.close()
-        raise RuntimeError("登录失败")
+        raise RuntimeError(
+            "rmfyalk 未登录且当前为无头模式，无法交互。"
+            "请先手动运行 `python sources/case_library.py --login` 完成登录。"
+        )
+
+    # 有头模式：轮询等待用户登录（不依赖 stdin）
+    try:
+        page.goto(f"{BASE_URL}/view/list.html", wait_until="domcontentloaded", timeout=30000)
+    except Exception as e:
+        print(f"[WARN] 页面加载失败（{e}），请在浏览器中手动导航并登录")
+    page.wait_for_timeout(2000)
+    print("\n[WARN] 请在弹出的浏览器中完成登录...")
+    print("      （等待最多 180 秒，登录成功后自动继续）")
+
+    for i in range(180):
+        time.sleep(1)
+        try:
+            body = page.inner_text("body")
+            if re.search(r"1[3-9]\d{9}", body):
+                print(f"[OK]  登录成功（用时 {i + 1} 秒）")
+                return context, page
+        except Exception:
+            pass
+
+    context.close()
+    raise RuntimeError("登录超时：180 秒内未检测到登录成功")
 
 
 # ─── list API ──────────────────────────────────────────────────
@@ -187,8 +207,9 @@ def fetch_list_via_api(page: Page, page_num: int = 1,
 
 def crawl_incremental(since_date: Optional[str] = None,
                       max_pages: int = 15,
-                      dry_run: bool = False) -> dict:
-    """增量同步主逻辑"""
+                      dry_run: bool = False,
+                      headless: bool = True) -> dict:
+    """增量同步主逻辑。headless=True 用于 cron/自动化（需已有登录态）。"""
     state = load_sync_state()
     cl_state = state.get("case_library", {})
     known_labels = load_existing_labels()
@@ -202,7 +223,7 @@ def crawl_incremental(since_date: Optional[str] = None,
     errors = []
 
     with sync_playwright() as pw:
-        context, page = do_login(pw)
+        context, page = do_login(pw, headless=headless)
 
         try:
             for page_num in range(1, max_pages + 1):
@@ -275,7 +296,7 @@ def login_guide():
     print("rmfyalk 案例库 — 登录向导")
     print("=" * 50)
     with sync_playwright() as pw:
-        context, page = do_login(pw)
+        context, page = do_login(pw, headless=False)
         print("[OK]  登录态已保存到:", PROFILE_DIR)
         context.close()
 
