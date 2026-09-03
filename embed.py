@@ -8,12 +8,16 @@ BGE 模型需要前缀：case 文本加 "passage: "，搜索查询加 "query: "�
 import os
 import json
 import numpy as np
+from pathlib import Path
 from typing import List
 
 # --- config ---
 MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 DIM = 512
 BATCH_SIZE = 256
+
+# 本地模型目录（可选）。设置 EMBEDDING_MODEL_PATH 后走本地加载，跳过 huggingface 下载。
+MODEL_PATH = os.environ.get("EMBEDDING_MODEL_PATH", "")
 
 _model = None
 
@@ -50,7 +54,11 @@ def _get_model():
     if _model is None:
         from fastembed import TextEmbedding
         print(f"加载 embedding 模型: {MODEL_NAME}...")
-        _model = TextEmbedding(MODEL_NAME)
+        if MODEL_PATH and Path(MODEL_PATH).exists():
+            print(f"  使用本地模型目录: {MODEL_PATH}")
+            _model = TextEmbedding(MODEL_NAME, specific_model_path=MODEL_PATH)
+        else:
+            _model = TextEmbedding(MODEL_NAME)
         print(f"  模型就绪，维度: {DIM}")
     return _model
 
