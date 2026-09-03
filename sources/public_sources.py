@@ -29,9 +29,10 @@ _NON_CASE_PATTERNS = [
 
 def _is_case(title: str) -> bool:
     """判断公报标题是否为真正的案例（而非法规、司法文件、任免等）"""
-    # 明确是案例的模式
+    # 指导性案例由 guide_case.py 专门抓取，公报爬虫不应收录（否则会与「指导案例」来源重复）
     if "指导性案例" in title:
-        return True
+        return False
+    # 明确是案例的模式
     if "诉" in title and "案" in title:
         return True
     if re.search(r"与.*(纠纷|赔偿|侵权|合同).*案", title):
@@ -114,23 +115,43 @@ def _parse_gazette_detail(client: httpx.Client, url: str) -> Optional[dict]:
         resp.raise_for_status()
         text = resp.text
 
-        content = re.sub(r"<[^>]+>", "\n", text)
-        content = re.sub(r"\n{3,}", "\n\n", content).strip()
+        # 只取正文容器 gb_content，避免把导航/面包屑/页脚混进内容
+        body_m = re.search(
+            r'id="gb_content"[^>]*>(.*?)(?:<div class="footer|</body>)', text, re.DOTALL
+        )
+        body_html = body_m.group(1) if body_m else text
+        content = re.sub(r"<[^>]+>", "\n", body_html)
+        content = re.sub(r"[ \t　]+", " ", content)
+        content = re.sub(r"\n{2,}", "\n", content).strip()
 
-        # 提取案号
-        ah_m = re.search(r"[（(]\d{4}[）)][一-龥\d]+号", content)
+        # 裁判要旨：从【裁判要旨】到正文（民事判决书/裁定书）之前
+        gist = ""
+        gist_m = re.search(
+            r"【裁判要旨】\s*(.*?)(?:最高人民法院民事判决书|最高人民法院民事裁定书|民事判决书|民事裁定书|\Z)",
+            content,
+            re.DOTALL,
+        )
+        if gist_m:
+            gist = re.sub(r"\s+", " ", gist_m.group(1)).strip()
+
+        # 全文：完整正文，设上限防异常超长
+        full = content[:50000]
+
+        # 案号：合并空白后再匹配（案号可能被换行/空格拆开）
+        flat = re.sub(r"\s+", "", content)
+        ah_m = re.search(r"[（(]\d{4}[）)][一-龥\d、]{1,24}号", flat)
         ah = ah_m.group(0) if ah_m else ""
 
-        # 提取年份
+        # 年份
         year_m = re.search(r"(\d{4})", ah) if ah else None
         year = year_m.group(1) if year_m else ""
 
         return {
             "ah": ah,
             "year": year,
-            "gist": content[:3000],
+            "gist": gist,
             "keywords": "",
-            "full": content[:5000],
+            "full": full,
             "cat": "",
             "court": "",
         }
