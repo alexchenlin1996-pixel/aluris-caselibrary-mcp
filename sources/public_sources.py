@@ -161,11 +161,13 @@ def _parse_gazette_detail(client: httpx.Client, url: str) -> Optional[dict]:
 
 # ─── 法答网 (court.gov.cn/zixun/) ──────────────────────────────
 
-FADAWANG_LIST = "https://www.court.gov.cn/zixun/gengduo-22.html"
+# 网站改版后，法答网「精选答问」以批次合集形式发布，原栏目列表页(gengduo-22)已下线，
+# 改用站内搜索「法答网精选答问」作为列表来源。
+FADAWANG_SEARCH = "https://www.court.gov.cn/search.html?content=%E6%B3%95%E7%AD%94%E7%BD%91%E7%B2%BE%E9%80%89%E7%AD%94%E9%97%AE"
 
 
 def crawl_fadawang_incremental(dry_run: bool = False) -> dict:
-    """法答网增量：扫描列表页发现新知问答"""
+    """法答网增量：通过站内搜索发现新的「精选答问」批次"""
     from sync import load_state, save_state
     state = load_state()
     fs = state.get("fadawang", {})
@@ -175,8 +177,8 @@ def crawl_fadawang_incremental(dry_run: bool = False) -> dict:
     new_cases = []
 
     try:
-        for page in [1, 2]:
-            url = f"https://www.court.gov.cn/zixun/gengduo-22-page-{page}.html" if page > 1 else FADAWANG_LIST
+        for page in [1, 2, 3]:
+            url = f"{FADAWANG_SEARCH}&page={page}"
             resp = client.get(url)
             resp.raise_for_status()
             text = resp.text
@@ -188,7 +190,8 @@ def crawl_fadawang_incremental(dry_run: bool = False) -> dict:
 
             for href, num_id, title in links:
                 title = title.strip()
-                if num_id in known_ids or len(title) < 5:
+                # 只抓「法答网精选答问」批次，过滤搜索结果里的其他内容
+                if num_id in known_ids or "法答网精选答问" not in title:
                     continue
 
                 detail_url = f"https://www.court.gov.cn{href}"
@@ -202,8 +205,8 @@ def crawl_fadawang_incremental(dry_run: bool = False) -> dict:
                     new_cases.append(detail)
                     known_ids.add(num_id)
 
-            if len(new_cases) > 0:
-                break  # 只扫到有新内容就停
+            if len(new_cases) > 0 and page >= 2:
+                break  # 已扫到新批次就停，避免翻太多页
 
     except Exception as e:
         print(f"  [WARN]  法答网抓取失败: {e}")
@@ -227,24 +230,22 @@ def _parse_fadawang_detail(client: httpx.Client, url: str) -> Optional[dict]:
         resp.raise_for_status()
         text = resp.text
 
-        # 提取正文区域
-        body_m = re.search(r'<div class="con_tit">(.*?)<div class="con_bot">', text, re.DOTALL)
-        content = body_m.group(1) if body_m else ""
-        content = re.sub(r"<[^>]+>", "\n", content)
-        content = re.sub(r"\n{3,}", "\n\n", content).strip()
+        # 提取正文区域（网站改版后正文用 <p> 段落，不再有 con_tit 容器）
+        paras = re.findall(r"<p[^>]*>(.*?)</p>", text, re.DOTALL)
+        lines = [re.sub(r"<[^>]+>", "", p).strip() for p in paras]
+        lines = [re.sub(r"\s+", " ", l) for l in lines if l]
+        content = "\n".join(lines)
 
-        # 提取问题（通常以"？"或"。"结尾的第一段）
+        # 提取问题（第一个「问题X：」段落）
         question = ""
-        lines = content.split("\n")
         for line in lines:
-            line = line.strip()
-            if line and ("？" in line or "问题" in line):
+            if "问题" in line and ("？" in line or "：" in line):
                 question = line[:200]
                 break
 
         return {
             "gist": content[:3000],
-            "full": content[:5000],
+            "full": content[:8000],
             "keywords": question,
             "cat": "",
             "court": "",
