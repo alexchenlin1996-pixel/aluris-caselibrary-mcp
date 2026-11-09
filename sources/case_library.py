@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import time
+import random
 import re
 from pathlib import Path
 from typing import Optional
@@ -19,7 +20,7 @@ CASE_DB_DIR = Path(os.environ.get("CASE_DB_PATH", Path.home() / ".myagents/case_
 PROFILE_DIR = CASE_DB_DIR / "playwright_profile"
 CASES_JSONL = CASE_DB_DIR / "cases.jsonl"
 SYNC_STATE_PATH = CASE_DB_DIR / "sync_state.json"
-REQUEST_DELAY = 2.5  # 页面请求间隔（秒），模拟正常浏览
+REQUEST_DELAY = 5.0  # 页面请求基础间隔（秒），页间随机再加 0~3 秒，模拟正常浏览、降低爬虫识别风险
 
 
 # ─── sync state ────────────────────────────────────────────────
@@ -68,10 +69,17 @@ def append_to_jsonl(cases: list):
 
 def is_logged_in(page: Page) -> bool:
     try:
-        page.goto(f"{BASE_URL}/view/list.html", wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(1000)
-        body = page.inner_text("body")
-        return bool(re.search(r"1[3-9]\d{9}", body))
+        page.goto(f"{BASE_URL}/view/list.html", wait_until="domcontentloaded", timeout=20000)
+        # 手机号由 JS 异步渲染，轮询等待最多 10 秒，避免页面加载稍慢时误判为未登录
+        for _ in range(10):
+            try:
+                body = page.inner_text("body")
+                if re.search(r"1[3-9]\d{9}", body):
+                    return True
+            except Exception:
+                pass
+            page.wait_for_timeout(1000)
+        return False
     except Exception:
         return False
 
@@ -227,6 +235,8 @@ def crawl_incremental(since_date: Optional[str] = None,
 
         try:
             for page_num in range(1, max_pages + 1):
+                if page_num > 1:
+                    time.sleep(REQUEST_DELAY + random.uniform(0, 3))
                 print(f"\n API 第 {page_num} 页...")
                 result = fetch_list_via_api(page, page_num=page_num)
 
