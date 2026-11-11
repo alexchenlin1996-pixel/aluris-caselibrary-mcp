@@ -12,6 +12,7 @@ _os.environ.pop("no_proxy", None)
 if "HF_ENDPOINT" not in _os.environ:
     _os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
+import asyncio
 import os
 import sys
 import json
@@ -27,16 +28,39 @@ import mcp.server.stdio
 
 from embed import embed_single
 from search import get_searcher
+from case_followup import follow_case
 
 # --- 全局配置 ---
 READONLY = False  # HTTP 模式下为 True，不暴露 sync_now
 
 # --- MCP Server ---
-server = Server("case-library")
+server = Server(
+    "case-library",
+    instructions=(
+        "展示案例检索结果时，如果工具返回「继续追查」建议，请在给用户的答复末尾保留一句可直接照说的建议。"
+        "若调整了展示顺序，使用用户看到的序号或案名。用户提出或接受追查后，"
+        "使用对应案例的案例编号调用 follow_case_evidence。"
+    ),
+)
 
 
 def _is_citable_result(case: dict) -> bool:
     return bool((case.get("rule_text") or "").strip()) and case.get("rule_quality") in ("A", "B")
+
+
+def _append_followup_hint(parts: list[str], results: list[dict]) -> None:
+    for rank, case in enumerate(results, 1):
+        if (
+            case.get("local_id") is not None
+            and not case.get("abolished")
+            and (case.get("url") or case.get("local_file"))
+            and _is_citable_result(case)
+        ):
+            parts.append(
+                "\n**继续追查**｜想看看同一争点在其他案件里怎么判？"
+                f"可以直接说：「沿第 {rank} 条继续查，帮我找可以对照的裁判和原文。」"
+            )
+            return
 
 
 def _build_table(results: list, with_similarity: bool = False) -> str:
@@ -118,7 +142,7 @@ def _build_cards(results: list, with_score: bool = False, query: str = "") -> st
             f"\n裁判规则：{rule}",
             f"\n引用摘要：{_inline_citation_summary(c)}",
             f"\n原文链接：{_source_link(c)}",
-            f"案例编号：{c.get('local_id')}（供继续展开详情或重新整理时使用）",
+            f"案例编号：{c.get('local_id')}（可展开详情）",
         ])
     return "\n\n".join(cards)
 
@@ -130,6 +154,38 @@ def _source_link(c: dict) -> str:
     if url.startswith("http://") or url.startswith("https://"):
         return f"[原文]({url})"
     return url
+
+
+def _format_case_followup(local_id: int, issue: str, followup: dict) -> str:
+    seed = followup["seed"]
+    lines = [f"# 沿案例继续追查：{seed['title']}", f"首案编号：{local_id}｜原文：{_source_link(seed)}"]
+    if issue:
+        lines.append(f"追查争点：{issue}")
+    if followup["seed_excerpt"]:
+        lines.append(f"首案原文（{followup['seed_section']}）：{followup['seed_excerpt']}")
+    if followup["references"]:
+        lines.append(f"首案条文线索：{'、'.join(followup['references'])}")
+    if followup["terms"]:
+        lines.append(f"扩展检索词：{'、'.join(followup['terms'])}")
+    for rank, result in enumerate(followup["results"], 1):
+        case = result["case"]
+        lines.extend([
+            f"\n## {rank}. {case['title']}",
+            f"{case['source']}｜案例编号：{result['local_id']}｜原文：{_source_link(case)}",
+        ])
+        if case.get("ah"):
+            lines.append(f"案号：{case['ah']}")
+        if result["references"]:
+            lines.append(f"与首案共同提及的条文：{'、'.join(result['references'])}")
+        lines.extend([
+            f"原文匹配词：{'、'.join(result['terms'])}",
+            f"原文摘录（{result['section']}）：{result['evidence']}",
+        ])
+    if followup["results"]:
+        lines.append("\n请结合两案原文核对事实、裁判立场和条文版本。")
+    else:
+        lines.append("\n未找到有对应规则原文的对照案例。可补充希望追查的具体争点。")
+    return "\n".join(lines)
 
 
 def _format_evidence_block(c: dict, query: str = "", limit: int = 360) -> str:
@@ -346,6 +402,7 @@ def _fmt_rule_results(issue: str, results: list) -> str:
             f"原文链接：{_source_link(c)}",
             f"案例编号：{c.get('local_id')}（供继续展开详情或重新整理时使用）",
         ])
+    _append_followup_hint(parts, results)
     return "\n".join(parts)
 
 
@@ -453,6 +510,19 @@ async def list_tools():
                 "type": "object",
                 "properties": {
                     "local_id": {"type": "integer", "description": "案例编号（搜索结果卡片底部显示的编号）"},
+                },
+                "required": ["local_id"],
+            },
+        ),
+        Tool(
+            name="follow_case_evidence",
+            description="沿指定案例继续追查。依据首案裁判规则及条文线索检索对照案例，返回匹配词、规则原文和出处。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "local_id": {"type": "integer", "minimum": 0, "description": "检索结果中显示的案例编号"},
+                    "issue": {"type": "string", "maxLength": 240, "description": "希望继续追查的具体争点；省略时沿首案规则追查"},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                 },
                 "required": ["local_id"],
             },
@@ -570,6 +640,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "\n每条卡片已包含命中原文依据、详情摘要、引用摘要和原文链接。"
         )
         output_parts.append("如需展开全文或最终汇总表，可以直接说“查看第 N 条详情”或“整理成表格”。")
+        _append_followup_hint(output_parts, results)
 
         return [TextContent(type="text", text="\n".join(output_parts))]
 
@@ -579,6 +650,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if case is None:
             return [TextContent(type="text", text=f"案例 {local_id} 不存在。")]
         return [TextContent(type="text", text=_fmt_case_detail(case))]
+
+    elif name == "follow_case_evidence":
+        local_id = arguments["local_id"]
+        issue = arguments.get("issue", "").strip()
+        top_k = arguments.get("top_k", 5)
+        result = await asyncio.to_thread(follow_case, searcher.cases, local_id, issue, top_k)
+        if result is None:
+            return [TextContent(type="text", text=f"案例 {local_id} 不存在或已下线。")]
+        return [TextContent(type="text", text=_format_case_followup(local_id, issue, result))]
 
     elif name == "find_rules_by_issue":
         issue = arguments["issue"]
@@ -617,6 +697,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         output_parts = [f" 过滤结果 — {len(results)} 个案例（最多显示 {limit} 个）\n"]
         output_parts.append(_build_table(results))
+        _append_followup_hint(output_parts, results)
         return [TextContent(type="text", text="\n".join(output_parts))]
 
     elif name == "library_stats":
@@ -639,7 +720,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         dry_run = arguments.get("dry_run", False)
         source = arguments.get("source", "case_library")
         try:
-            import asyncio
             from sync import sync_all, sync_case_library
             if source == "case_library":
                 result = await asyncio.to_thread(sync_case_library, dry_run=dry_run)
