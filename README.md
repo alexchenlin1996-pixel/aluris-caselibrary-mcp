@@ -8,14 +8,16 @@
 
 | 类型 | 数量 | 引用价值 |
 |------|------|------|
-| 案例库案例 | 5,211 | 重要参考 |
+| 案例库案例 | 5,386 | 重要参考 |
 | 指导案例 | 556 | 应优先引用 |
 | 典型案例 | 544 | 重要参考 |
-| 公报案例 | 461 | 权威参考 |
-| 最高检指导性案例 | 239 | 重要参考 |
+| 公报案例 | 457 | 权威参考 |
+| 最高检指导性案例 | 237 | 重要参考 |
 | 最高检典型案例 | 196 | 参考 |
-| 法答网 | 165 | 辅助参考 |
-| **合计** | **7,372** | |
+| 法答网 | 36 批 | 辅助参考 |
+| **合计** | **7,412** | |
+
+> 数据截至 2026-11，每周六自动同步。法答网为批次合集（每批含多个问答）。
 
 ---
 
@@ -223,7 +225,7 @@ URL: https://aluris.top/mcp
 git clone https://github.com/alexchenlin1996-pixel/aluris-caselibrary-mcp.git
 cd aluris-caselibrary-mcp
 uv sync
-uv run python sync.py          # 首次拉取案例数据（需要时间）
+uv run python setup_wizard.py   # 首次初始化向导（推荐从 GitHub Release 下载数据包）
 ```
 
 本地 stdio 模式（Claude Desktop）：
@@ -259,6 +261,10 @@ uv run python server.py --transport http --port 8765
 ├── search.py           # 两阶段检索（embedding + reranker）
 ├── embed.py            # fastembed + BAAI/bge-small-zh-v1.5
 ├── sync.py             # 增量同步协调器
+├── weekly_sync.py      # 每周同步（登录态检查→同步→embedding→部署）
+├── case_followup.py    # 类案追查（沿裁判规则找对照案例）
+├── dedup_clean.py      # 案例去重与清理
+├── setup_wizard.py     # 首次初始化向导（Release 数据包 / 独立同步）
 └── sources/
     ├── case_library.py # 最高院案例库（rmfyalk，需登录）
     ├── guide_case.py   # 指导案例（公开）
